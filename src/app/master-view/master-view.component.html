@@ -1,0 +1,333 @@
+<main class="workspace">
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">MÓDULO DE CUMPLIMIENTO · DEMO</p>
+      <h1>Portal de Cumplimiento</h1>
+      <p class="subtitle">Registro documental de clientes para revisión y aprobación.</p>
+    </div>
+    <nav class="mode-switch" aria-label="Cambiar vista de demostración">
+      <button type="button" [class.active]="mode === 'client'" (click)="switchMode('client')">Vista cliente</button>
+      <button type="button" [class.active]="mode === 'admin'" (click)="switchMode('admin')">Vista interna</button>
+    </nav>
+  </header>
+
+  @if (notice) { <div class="alert success">{{ notice }}</div> }
+  @if (error) { <div class="alert error">{{ error }}</div> }
+
+  @if (successMessage) {
+    <div class="success-overlay" (click)="closeSuccess()">
+      <div class="success-modal" role="dialog" aria-modal="true" aria-label="Solicitud enviada" (click)="$event.stopPropagation()">
+        <button type="button" class="success-close" aria-label="Cerrar" (click)="closeSuccess()">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.29 19.7 2.88 18.3 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.3-6.29z"/></svg>
+        </button>
+        <span class="success-icon">
+          <svg viewBox="0 0 24 24" width="56" height="56" aria-hidden="true"><path fill="#16A34A" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+        </span>
+        <h3>Completado</h3>
+        <p>{{ successMessage }}</p>
+      </div>
+    </div>
+  }
+
+  @if (mode === 'client') {
+    <section class="status-card">
+      <div>
+        <p class="section-label">ESTADO DE CUENTA</p>
+        <h2>{{ clientStatusTitle }}</h2>
+        <p>{{ clientStatusDescription }}</p>
+      </div>
+      <div class="status-actions">
+        <span class="status-badge" [class]="'status-badge ' + application.status.toLowerCase()">{{ statusLabel }}</span>
+      </div>
+    </section>
+
+    @if (application.status === 'REJECTED') {
+      <div class="alert error reject-banner">
+        <strong>Tu solicitud fue rechazada.</strong>
+        <span>Corrige lo siguiente y vuelve a enviar tu solicitud:</span>
+        <ul>
+          @for (key of application.rejectionFields; track key) { <li>{{ documentLabel(key) }}</li> }
+        </ul>
+      </div>
+    }
+
+    <section class="panel" [class.neon-success]="neonFeedback === 'success'" [class.neon-error]="neonFeedback === 'error'">
+      <div class="section-heading">
+        <div><p class="section-label">SOLICITUD DEL CLIENTE</p><h2>Información y documentación</h2></div>
+        @if (application.status !== 'NOT_APPROVED' && application.status !== 'REJECTED') { <button type="button" class="text-button" (click)="resetDemo()">Nueva solicitud de demo</button> }
+      </div>
+
+      <div class="form-notice"><span>{{ uploadFormatNote }}</span><span class="form-notice-sep">•</span><span>{{ optionalLegend }}</span></div>
+
+      <form #applicationForm="ngForm" (ngSubmit)="submit(applicationForm)">
+        <fieldset [disabled]="!canEdit || isSaving">
+          <div class="form-grid">
+            <label>Nombre o razón social<input name="clientName" [(ngModel)]="application.clientName" required placeholder="Ej. Empresa Demo S.R.L." /></label>
+
+            @for (field of mainUploadFields; track field.key) {
+              <div class="field-with-upload" [class.rejected]="isRejectedField(field.key)" [class.field-invalid]="invalidUploadKeys.includes(field.key)">
+                {{ field.label }}
+                <span class="field-row">
+                  <input [name]="'main.' + field.key" [(ngModel)]="application[field.key]" required placeholder="{{ field.placeholder || 'Ej. texto del documento' }}" />
+                  <label class="upload-btn" title="Adjuntar PDF"><img src="/icons/upload.svg" alt="Adjuntar archivo" /><input type="file" accept="application/pdf,.pdf" (change)="onDocumentSelected($event, field.key)" /></label>
+                </span>
+                @if (isRejectedField(field.key)) { <small class="reject-note">Debes volver a subir/proveer esta información.</small> }
+                <span class="upload-row">
+                  @for (doc of documentsFor(field.key); track doc.id) {
+                    <span class="doc-chip">
+                      <span class="doc-name-text">{{ doc.name }}</span>
+                      <button type="button" class="doc-remove" aria-label="Quitar archivo" (click)="removeDocument(doc)">×</button>
+                    </span>
+                  }
+                </span>
+              </div>
+            }
+
+            <label [class.rejected]="isRejectedField('website')">Página web / Redes sociales *<input name="website" [(ngModel)]="application.website" placeholder="https://misitio.com" />@if (isRejectedField('website')) { <small class="reject-note">Debes corregir este dato.</small> }</label>
+          </div>
+        </fieldset>
+        @if (canEdit) {
+          <div class="form-actions"><button type="submit" class="primary" [disabled]="isSaving">{{ isSaving ? 'Guardando…' : application.status === 'REJECTED' ? 'Reenviar solicitud' : 'Enviar' }}</button></div>
+        }
+      </form>
+    </section>
+
+    @if (application.followUpFormsEnabled) {
+      <section class="panel follow-up-panel" [class.neon-success]="neonFeedback === 'success'" [class.neon-error]="neonFeedback === 'error'">
+        <div class="section-heading">
+          <div>
+            <p class="section-label">DOCUMENTACIÓN ADICIONAL SOLICITADA</p>
+            <h2>Formularios de seguimiento</h2>
+            <p>La empresa determinó que estos niveles aplican a tu evaluación. Tu cuenta permanecerá Pendiente durante la revisión.</p>
+          </div>
+          <span class="status-badge pending">Pendiente</span>
+        </div>
+
+        <div class="form-notice"><span>{{ uploadFormatNote }}</span><span class="form-notice-sep">•</span><span>{{ optionalLegend }}</span></div>
+
+        @if (application.followUpFormsSubmittedAt) {
+          <div class="alert success inline-alert">Los formularios adicionales fueron enviados y están en revisión.</div>
+        }
+
+        <fieldset [disabled]="!followUpEditable || isSaving">
+          <section class="follow-up-form">
+            <div class="level-heading intermediate-level"><span>1</span><div><p class="section-label">NIVEL INTERMEDIO</p><h3>Cliente estándar / regional</h3><p>Todo lo anterior, más:</p></div></div>
+            <div class="form-grid">
+              @for (field of intermediateFields; track field.key) {
+                <div class="field-with-upload" [class.rejected]="isRejectedField(field.key)" [class.field-invalid]="invalidFollowUpKeys.includes(field.key)">
+                  {{ field.label }}
+                  <span class="field-row">
+                    <input [name]="'int.' + field.key" [(ngModel)]="application.followUpDocs[field.key]" placeholder="{{ field.hint }}" (ngModelChange)="onFollowUpChange(field.key)" />
+                    <label class="upload-btn" title="Adjuntar PDF"><img src="/icons/upload.svg" alt="Adjuntar archivo" /><input type="file" accept="application/pdf,.pdf" (change)="onDocumentSelected($event, field.key)" /></label>
+                  </span>
+                  @if (isRejectedField(field.key)) { <small class="reject-note">Debes volver a subir/proveer esta información.</small> }
+                  <span class="upload-row">
+                    @for (doc of documentsFor(field.key); track doc.id) {
+                      <span class="doc-chip">
+                        <span class="doc-name-text">{{ doc.name }}</span>
+                        <button type="button" class="doc-remove" aria-label="Quitar archivo" (click)="removeDocument(doc)">×</button>
+                      </span>
+                    }
+                  </span>
+                </div>
+              }
+          </div>
+        </section>
+
+          <section class="follow-up-form enhanced-form">
+            <div class="level-heading enhanced-level"><span>2</span><div><p class="section-label">NIVEL REFORZADO · EDD</p><h3>Alto riesgo</h3><p>Todo lo anterior, más:</p></div></div>
+            <div class="form-grid">
+              @for (field of enhancedFields; track field.key) {
+                <div class="field-with-upload" [class.rejected]="isRejectedField(field.key)" [class.field-invalid]="invalidFollowUpKeys.includes(field.key)">
+                  {{ field.label }}{{ field.optional ? ' *' : '' }}
+                  <span class="field-row">
+                    <input [name]="'enh.' + field.key" [(ngModel)]="application.followUpDocs[field.key]" placeholder="{{ field.hint || '' }}" (ngModelChange)="onFollowUpChange(field.key)" />
+                    <label class="upload-btn" title="Adjuntar PDF"><img src="/icons/upload.svg" alt="Adjuntar archivo" /><input type="file" accept="application/pdf,.pdf" (change)="onDocumentSelected($event, field.key)" /></label>
+                  </span>
+                  @if (isRejectedField(field.key)) { <small class="reject-note">Debes volver a subir/proveer esta información.</small> }
+                  <span class="upload-row">
+                    @for (doc of documentsFor(field.key); track doc.id) {
+                      <span class="doc-chip">
+                        <span class="doc-name-text">{{ doc.name }}</span>
+                        <button type="button" class="doc-remove" aria-label="Quitar archivo" (click)="removeDocument(doc)">×</button>
+                      </span>
+                    }
+                  </span>
+                </div>
+              }
+            </div>
+          </section>
+        </fieldset>
+        @if (followUpEditable) {
+          <div class="form-actions"><button type="button" class="primary" [disabled]="isSaving" (click)="submitFollowUpForms()">{{ isSaving ? 'Guardando…' : 'Enviar formularios adicionales' }}</button></div>
+        }
+      </section>
+    }
+  } @else {
+    <div class="admin-tabs" role="group" aria-label="Vistas internas">
+      <button type="button" [class.active]="adminTab === 'bandeja'" (click)="adminTab = 'bandeja'">Bandeja interna</button>
+      <button type="button" [class.active]="adminTab === 'historico'" (click)="adminTab = 'historico'">Base de datos / Histórico</button>
+    </div>
+
+    @if (adminTab === 'bandeja') {
+      <section class="admin-layout">
+      <aside class="panel applications-list">
+        <div><p class="section-label">BANDEJA INTERNA</p><h2>Clientes</h2></div>
+        <input class="search" [(ngModel)]="searchTerm" placeholder="Buscar por cliente, NIT o estado" />
+        <div class="filter-tabs" role="group" aria-label="Filtrar por estado">
+          <button type="button" [class.active]="statusFilter === 'ALL'" (click)="statusFilter = 'ALL'">Todos</button>
+          <button type="button" [class.active]="statusFilter === 'PENDING'" (click)="statusFilter = 'PENDING'">Pendientes</button>
+          <button type="button" [class.active]="statusFilter === 'APPROVED'" (click)="statusFilter = 'APPROVED'">Aprobados</button>
+          <button type="button" [class.active]="statusFilter === 'REJECTED'" (click)="statusFilter = 'REJECTED'">Rechazados</button>
+          <button type="button" [class.active]="statusFilter === 'NOT_APPROVED'" (click)="statusFilter = 'NOT_APPROVED'">No aprobados</button>
+        </div>
+        @if (!filteredApplications.length) { <p class="empty">Todavía no existen solicitudes.</p> }
+        @for (item of filteredApplications; track item.id) {
+          <button type="button" class="application-row" [class.selected]="selectedApplicationId === item.id" (click)="selectApplication(item)">
+            <span><strong>{{ item.clientName }}</strong><small>NIT {{ item.nit }}</small></span>
+            <span class="status-badge compact" [class]="'status-badge compact ' + item.status.toLowerCase()">{{ getStatusLabel(item.status) }}</span>
+          </button>
+        }
+      </aside>
+
+      <section class="panel review-panel">
+        @if (selectedApplication; as selected) {
+          <div class="section-heading"><div><p class="section-label">REVISIÓN</p><h2>{{ selected.clientName }}</h2><p>NIT {{ selected.nit }}</p></div><span class="status-badge" [class]="'status-badge ' + selected.status.toLowerCase()">{{ getStatusLabel(selected.status) }}</span></div>
+          <dl class="details">
+            <div><dt>Constitución / CI</dt><dd>{{ selected.constitutionRecord }}</dd></div>
+            <div><dt>Registro de comercio</dt><dd>{{ selected.commercialRegistration }}</dd></div>
+            <div><dt>Representante legal</dt><dd>{{ selected.representativeDocument }}</dd></div>
+            <div><dt>Poder legal</dt><dd>{{ selected.representativePower }}</dd></div>
+            <div><dt>Certificación bancaria</dt><dd>{{ selected.bankCertification }}</dd></div>
+            <div><dt>Fecha de envío</dt><dd>{{ selected.submittedAt | date:'medium' }}</dd></div>
+          </dl>
+          <div class="downloads"><h3>Archivos enviados @if (loadingDetail) { <span class="loading-badge">Cargando detalle…</span> }</h3>
+            @if (!selected.documents.length) { <p class="empty">El cliente aún no adjuntó archivos.</p> }
+            @else {
+              @for (group of baseDocGroups(selected); track group.formKey) {
+                <div class="doc-group">
+                  <p class="doc-group-label">{{ documentLabel(group.formKey) }}</p>
+                  <div class="doc-group-items">
+                    @for (document of group.documents; track document.id) {
+                      <div class="doc-tile">
+                        <span><strong>{{ documentLabel(document.formKey) }}</strong></span>
+                        <small>{{ formattedSize(document.size) }}</small>
+                        <button type="button" class="view-button" (click)="viewDocument(selected, document)">Ver</button>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+              @for (level of followUpLevels(selected); track level.key) {
+                <p class="summary-level">{{ level.label }}</p>
+                @for (group of level.groups; track group.formKey) {
+                  <div class="doc-group">
+                    <p class="doc-group-label">{{ documentLabel(group.formKey) }}</p>
+                    <div class="doc-group-items">
+                      @for (document of group.documents; track document.id) {
+                        <div class="doc-tile">
+                          <span><strong>{{ documentLabel(document.formKey) }}</strong></span>
+                          <small>{{ formattedSize(document.size) }}</small>
+                          <button type="button" class="view-button" (click)="viewDocument(selected, document)">Ver</button>
+                        </div>
+                      }
+                    </div>
+                  </div>
+                }
+              }
+            }
+          </div>
+          @if (selected.followUpFormsEnabled) {
+            <section class="follow-up-summary">
+              <div><p class="section-label">DOCUMENTACIÓN ADICIONAL</p><h3>Formularios intermedio y reforzado</h3></div>
+              <div class="follow-up-summary-block">
+                <p class="summary-level">{{ followUpLevelLabels['intermediate'] }}</p>
+                <dl class="details">
+                  @for (field of intermediateFields; track field.key) { <div><dt>{{ field.label }}</dt><dd>{{ selected.followUpDocs[field.key] || '—' }}</dd></div> }
+                </dl>
+              </div>
+              <div class="follow-up-summary-block">
+                <p class="summary-level">{{ followUpLevelLabels['enhanced'] }}</p>
+                <dl class="details">
+                  @for (field of enhancedFields; track field.key) { <div><dt>{{ field.label }}</dt><dd>{{ selected.followUpDocs[field.key] || '—' }}</dd></div> }
+                </dl>
+              </div>
+            </section>
+          }
+          <section class="qualification-card">
+            <div><p class="section-label">EVALUACIÓN INTERNA</p><h3>Escalamiento documental</h3><p>Revisa primero la documentación básica. Después, habilita los dos formularios adicionales únicamente cuando correspondan al cliente.</p></div>
+            <div class="qualification-steps">
+              <button type="button" class="review-check" [class.checked]="selected.baseDocumentationReviewed" [disabled]="selected.baseDocumentationReviewed || selected.status === 'APPROVED'" (click)="markBaseDocumentationReviewed(selected)">
+                <span class="check-box">{{ selected.baseDocumentationReviewed ? '✓' : '1' }}</span>
+                <span><strong>{{ selected.baseDocumentationReviewed ? 'Documentación base revisada' : 'Marcar documentación base como revisada' }}</strong><small>Este paso mantiene el estado Pendiente.</small></span>
+              </button>
+              <label class="eligibility-check" [class.enabled]="selected.followUpFormsEnabled" [class.disabled]="!selected.baseDocumentationReviewed || !!selected.followUpFormsSubmittedAt">
+                <input type="checkbox" [checked]="selected.followUpFormsEnabled" [disabled]="!selected.baseDocumentationReviewed || !!selected.followUpFormsSubmittedAt || selected.status === 'APPROVED'" (change)="setFollowUpEligibility(selected, $any($event.target).checked)" />
+                <span><strong>Aplican formularios Intermedio y Reforzado</strong><small>Actívalo solo si la evaluación del empleado determina que son necesarios.</small></span>
+              </label>
+              @if (selected.followUpFormsEnabled) {
+                <div class="follow-up-state"><strong>{{ selected.followUpFormsSubmittedAt ? 'Formularios adicionales recibidos' : 'Esperando formularios adicionales del cliente' }}</strong><small>El estado de la cuenta continúa Pendiente.</small></div>
+              }
+            </div>
+          </section>
+          <div class="review-actions">
+            <button type="button" class="secondary" (click)="downloadReport(selected)">Descargar informe PDF</button>
+            <button type="button" class="secondary reject-button" [disabled]="selected.status === 'APPROVED'" (click)="openReject(selected)">Rechazar</button>
+            <button type="button" class="primary approve" [disabled]="!canApprove(selected)" (click)="approve(selected)">{{ selected.status === 'APPROVED' ? 'Cliente aprobado' : 'Aprobar cliente definitivamente' }}</button>
+          </div>
+
+          @if (rejectOpen) {
+            <section class="reject-panel">
+              <div>
+                <p class="section-label">RECHAZO</p>
+                <h3>¿Qué debe corregir {{ selected.clientName }}?</h3>
+                <p>Selecciona únicamente el o los campos motivo del rechazo. El cliente verá resaltados solo estos campos.</p>
+              </div>
+              <div class="reject-chips">
+                @for (field of rejectionCandidates; track field.key) {
+                  <button type="button" class="reject-chip" [class.selected]="rejectionSelection.includes(field.key)" (click)="toggleRejectionField(field.key)">{{ field.label }}</button>
+                }
+              </div>
+              <div class="reject-actions">
+                <button type="button" class="secondary" (click)="cancelReject()">Cancelar</button>
+                <button type="button" class="primary reject-confirm" [disabled]="rejecting || !rejectionSelection.length" (click)="confirmReject()">{{ rejecting ? 'Procesando…' : 'Confirmar rechazo' }}</button>
+              </div>
+            </section>
+          }
+        } @else { <div class="empty-state"><h2>Selecciona un cliente</h2><p>Abre una solicitud para revisar sus datos y documentación.</p></div> }
+      </section>
+    </section>
+    }
+
+    @if (adminTab === 'historico') {
+      <section class="panel historico-panel">
+        <div class="section-heading">
+          <div><p class="section-label">BASE DE DATOS / HISTÓRICO</p><h2>Registro de clientes</h2><p>Todos los clientes registrados con su estado y el PDF de informe generado.</p></div>
+        </div>
+        <input class="search" [(ngModel)]="historicoSearch" placeholder="Buscar por nombre del cliente" />
+        @if (!filteredDatabaseRows.length) { <p class="empty">No se encontraron clientes.</p> }
+        @else {
+          <table class="historico-table">
+            <thead>
+              <tr><th>Cliente</th><th>NIT</th><th>Estado</th><th>PDF</th><th>Generado</th></tr>
+            </thead>
+            <tbody>
+              @for (row of filteredDatabaseRows; track row.id) {
+                <tr>
+                  <td><strong>{{ row.clientName }}</strong></td>
+                  <td>{{ row.nit }}</td>
+                  <td><span class="status-badge compact" [class]="'status-badge compact ' + row.status.toLowerCase()">{{ getStatusLabel(row.status) }}</span></td>
+                  <td>
+                    @if (row.hasPdf) { <button type="button" class="file-button" (click)="downloadReportById(row.id)"><span>{{ row.pdfFileName }}</span></button> }
+                    @else { <button type="button" class="text-button" (click)="generatePdfFor(row)">Generar PDF</button> }
+                  </td>
+                  <td>{{ row.pdfGeneratedAt ? (row.pdfGeneratedAt | date:'medium') : '—' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </section>
+    }
+  }
+</main>
