@@ -1,9 +1,7 @@
 # Compliance Portal — Guía de traspaso y puesta en marcha
 
 Guía completa de incorporación, referencia de arquitectura y esquema de base de
-datos del **Compliance Portal** (incorporación de clientes KYC/AML). Está
-escrita para un desarrollador o miembro del equipo que acaba de descargar este
-repositorio y necesita ponerlo en marcha y entenderlo.
+datos del **Compliance Portal** (incorporación de clientes KYC/AML).
 
 - **Frontend:** Angular 22, componentes *standalone* (sin NgModules)
 - **Backend:** Spring Boot 3.4.1 (Java 17+), JDBC mediante `JdbcTemplate`
@@ -36,15 +34,6 @@ Luego abre **<http://localhost:4200>**.
 ---
 
 ## 1. Qué hace la aplicación
-
-Una **empresa (cliente)** envía un expediente de cumplimiento KYC/AML:
-documentos de identidad y de registro, más los datos del formulario. Un
-**revisor interno** inspecciona el expediente en la vista de administración y
-luego lo **aprueba** o lo **rechaza** indicando exactamente qué campos debe
-corregir la empresa. Según el nivel de riesgo, el revisor puede habilitar dos
-niveles adicionales de cuestionarios (*Intermedio* = cliente estándar/regional,
-*Reforzado* = alto riesgo / EDD). El revisor también puede generar un informe PDF
-por empresa.
 
 Hay dos vistas separadas, cada una en su propia URL, y ambas hablando con el
 mismo backend:
