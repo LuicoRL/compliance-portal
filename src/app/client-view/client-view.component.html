@@ -1,0 +1,164 @@
+<main class="workspace">
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">MÓDULO DE CUMPLIMIENTO · DEMO</p>
+      <h1>Portal de Cumplimiento</h1>
+      <p class="subtitle">Registro documental de clientes para revisión y aprobación.</p>
+    </div>
+  </header>
+
+  @if (notice) { <div class="alert success">{{ notice }}</div> }
+  @if (error) { <div class="alert error">{{ error }}</div> }
+
+  @if (successMessage) {
+    <div class="success-overlay" (click)="closeSuccess()">
+      <div class="success-modal" role="dialog" aria-modal="true" aria-label="Solicitud enviada" (click)="$event.stopPropagation()">
+        <button type="button" class="success-close" aria-label="Cerrar" (click)="closeSuccess()">
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M18.3 5.71 12 12l6.3 6.29-1.41 1.42L10.59 13.4 4.29 19.7 2.88 18.3 9.17 12 2.88 5.71 4.29 4.3l6.3 6.29 6.3-6.29z"/></svg>
+        </button>
+        <span class="success-icon">
+          <svg viewBox="0 0 24 24" width="56" height="56" aria-hidden="true"><path fill="#16A34A" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/></svg>
+        </span>
+        <h3>Completado</h3>
+        <p>{{ successMessage }}</p>
+      </div>
+    </div>
+  }
+
+  <section class="status-card">
+    <div>
+      <p class="section-label">ESTADO DE CUENTA</p>
+      <h2>{{ clientStatusTitle }}</h2>
+      <p>{{ clientStatusDescription }}</p>
+    </div>
+    <div class="status-actions">
+      <span class="status-badge" [class]="'status-badge ' + application.status.toLowerCase()">{{ statusLabel }}</span>
+    </div>
+  </section>
+
+  @if (application.status === 'REJECTED') {
+    <div class="alert error reject-banner">
+      <strong>Tu solicitud fue rechazada.</strong>
+      <span>Corrige lo siguiente y vuelve a enviar tu solicitud:</span>
+      <ul>
+        @for (key of application.rejectionFields; track key) { <li>{{ documentLabel(key) }}</li> }
+      </ul>
+      <small>Los campos no señalados no pueden modificarse.</small>
+    </div>
+  }
+
+  <section class="panel" [class.neon-success]="neonFeedback === 'success'" [class.neon-error]="neonFeedback === 'error'">
+    <div class="section-heading">
+      <div><p class="section-label">SOLICITUD DEL CLIENTE</p><h2>Información y documentación</h2></div>
+      @if (application.status !== 'NOT_APPROVED' && application.status !== 'REJECTED') { <button type="button" class="text-button" (click)="startNewApplication()">Nueva solicitud de demo</button> }
+    </div>
+
+    <div class="form-notice"><span>{{ uploadFormatNote }}</span><span class="form-notice-sep">•</span><span>{{ requiredLegend }}</span></div>
+
+    @if (loadingDetail) { <div class="alert success inline-alert">Cargando tu solicitud…</div> }
+
+    <form #applicationForm="ngForm" (ngSubmit)="submit(applicationForm)">
+      <fieldset [disabled]="!canEdit || isSaving">
+        <div class="form-grid">
+          <label [class.locked]="!isFieldEditable('clientName')">Nombre o razón social *<input name="clientName" [(ngModel)]="application.clientName" [disabled]="!isFieldEditable('clientName')" required placeholder="Ej. Empresa Demo S.R.L." /></label>
+
+          @for (field of mainUploadFields; track field.key) {
+            <div class="field-with-upload" [class.rejected]="isRejectedField(field.key)" [class.field-invalid]="invalidUploadKeys.includes(field.key)" [class.locked]="!isFieldEditable(field.key)">
+              {{ field.label }} *
+              <span class="field-row">
+                <input [name]="'main.' + field.key" [(ngModel)]="application[field.key]" [disabled]="!isFieldEditable(field.key)" required placeholder="{{ field.placeholder || 'Ej. texto del documento' }}" />
+                <label class="upload-btn" [class.disabled]="!isFieldEditable(field.key)" title="Adjuntar PDF"><img src="/icons/upload.svg" alt="Adjuntar archivo" /><input type="file" accept="application/pdf,.pdf" [disabled]="!isFieldEditable(field.key)" (change)="onDocumentSelected($event, field.key)" /></label>
+              </span>
+              @if (isRejectedField(field.key)) { <small class="reject-note">Debes volver a subir/proveer esta información.</small> }
+              <span class="upload-row">
+                @for (doc of documentsFor(field.key); track doc.id) {
+                  <span class="doc-chip">
+                    <span class="doc-name-text">{{ doc.fileName }}</span>
+                    @if (isFieldEditable(field.key)) { <button type="button" class="doc-remove" aria-label="Quitar archivo" (click)="removeDocument(doc)">×</button> }
+                  </span>
+                }
+              </span>
+            </div>
+          }
+
+          <label [class.rejected]="isRejectedField('website')" [class.locked]="!isFieldEditable('website')">Página web / Redes sociales<input name="website" [(ngModel)]="application.website" [disabled]="!isFieldEditable('website')" placeholder="https://misitio.com" />@if (isRejectedField('website')) { <small class="reject-note">Debes corregir este dato.</small> }</label>
+        </div>
+      </fieldset>
+      @if (canEdit) {
+        <div class="form-actions"><button type="submit" class="primary" [disabled]="isSaving">{{ isSaving ? 'Guardando…' : application.status === 'REJECTED' ? 'Reenviar solicitud' : 'Enviar' }}</button></div>
+      }
+    </form>
+  </section>
+
+  @if (application.followUpFormsEnabled) {
+    <section class="panel follow-up-panel" [class.neon-success]="neonFeedback === 'success'" [class.neon-error]="neonFeedback === 'error'">
+      <div class="section-heading">
+        <div>
+          <p class="section-label">DOCUMENTACIÓN ADICIONAL SOLICITADA</p>
+          <h2>Formularios de seguimiento</h2>
+          <p>La empresa determinó que estos niveles aplican a tu evaluación. Tu cuenta permanecerá Pendiente durante la revisión.</p>
+        </div>
+        <span class="status-badge pending">Pendiente</span>
+      </div>
+
+      <div class="form-notice"><span>{{ uploadFormatNote }}</span><span class="form-notice-sep">•</span><span>{{ requiredLegend }}</span></div>
+
+      @if (application.followUpFormsSubmittedAt) {
+        <div class="alert success inline-alert">Los formularios adicionales fueron enviados y están en revisión.</div>
+      }
+
+      <fieldset [disabled]="!followUpEditable || isSaving">
+      <section class="follow-up-form">
+        <div class="level-heading intermediate-level"><span>1</span><div><p class="section-label">NIVEL INTERMEDIO</p><h3>Cliente estándar / regional</h3><p>Todo lo anterior, más:</p></div></div>
+        <div class="form-grid">
+          @for (field of intermediateFields; track field.key) {
+            <div class="field-with-upload" [class.rejected]="isRejectedField(field.key)" [class.field-invalid]="invalidFollowUpKeys.includes(field.key)" [class.locked]="!isFieldEditable(field.key)">
+              {{ field.label }} *
+              <span class="field-row">
+                <input [name]="'int.' + field.key" [(ngModel)]="application.followUpDocs[field.key]" [disabled]="!isFieldEditable(field.key)" placeholder="{{ field.hint }}" (ngModelChange)="onFollowUpChange(field.key)" />
+                <label class="upload-btn" [class.disabled]="!isFieldEditable(field.key)" title="Adjuntar PDF"><img src="/icons/upload.svg" alt="Adjuntar archivo" /><input type="file" accept="application/pdf,.pdf" [disabled]="!isFieldEditable(field.key)" (change)="onDocumentSelected($event, field.key)" /></label>
+              </span>
+              @if (isRejectedField(field.key)) { <small class="reject-note">Debes volver a subir/proveer esta información.</small> }
+              <span class="upload-row">
+                @for (doc of documentsFor(field.key); track doc.id) {
+                  <span class="doc-chip">
+                    <span class="doc-name-text">{{ doc.fileName }}</span>
+                    @if (isFieldEditable(field.key)) { <button type="button" class="doc-remove" aria-label="Quitar archivo" (click)="removeDocument(doc)">×</button> }
+                  </span>
+                }
+              </span>
+            </div>
+          }
+        </div>
+      </section>
+
+      <section class="follow-up-form enhanced-form">
+        <div class="level-heading enhanced-level"><span>2</span><div><p class="section-label">NIVEL REFORZADO · EDD</p><h3>Alto riesgo</h3><p>Todo lo anterior, más:</p></div></div>
+        <div class="form-grid">
+          @for (field of enhancedFields; track field.key) {
+            <div class="field-with-upload" [class.rejected]="isRejectedField(field.key)" [class.field-invalid]="invalidFollowUpKeys.includes(field.key)" [class.locked]="!isFieldEditable(field.key)">
+              {{ field.label }}{{ field.required ? ' *' : '' }}
+              <span class="field-row">
+                <input [name]="'enh.' + field.key" [(ngModel)]="application.followUpDocs[field.key]" [disabled]="!isFieldEditable(field.key)" placeholder="{{ field.hint || '' }}" (ngModelChange)="onFollowUpChange(field.key)" />
+                <label class="upload-btn" [class.disabled]="!isFieldEditable(field.key)" title="Adjuntar PDF"><img src="/icons/upload.svg" alt="Adjuntar archivo" /><input type="file" accept="application/pdf,.pdf" [disabled]="!isFieldEditable(field.key)" (change)="onDocumentSelected($event, field.key)" /></label>
+              </span>
+              @if (isRejectedField(field.key)) { <small class="reject-note">Debes volver a subir/proveer esta información.</small> }
+              <span class="upload-row">
+                @for (doc of documentsFor(field.key); track doc.id) {
+                  <span class="doc-chip">
+                    <span class="doc-name-text">{{ doc.fileName }}</span>
+                    @if (isFieldEditable(field.key)) { <button type="button" class="doc-remove" aria-label="Quitar archivo" (click)="removeDocument(doc)">×</button> }
+                  </span>
+                }
+              </span>
+            </div>
+          }
+        </div>
+      </section>
+      </fieldset>
+      @if (followUpEditable) {
+        <div class="form-actions"><button type="button" class="primary" [disabled]="isSaving" (click)="submitFollowUpForms()">{{ isSaving ? 'Guardando…' : 'Enviar formularios adicionales' }}</button></div>
+      }
+    </section>
+  }
+</main>
