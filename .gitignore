@@ -53,3 +53,13 @@ launcher/out.txt
 
 # Jar compilado
 cumplimiento.jar
+
+# Paquete portable (generado por package-portable.ps1, ~345 MB).
+# Es un asset de GitHub Releases, no un archivo del repositorio.
+compliance-portal-portable.zip
+
+# Salida en tiempo de ejecucion de start.ps1 / stop.ps1
+pgdata/
+pg.log
+backend.log
+backend.log.err
