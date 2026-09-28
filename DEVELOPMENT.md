@@ -106,8 +106,9 @@ recompilar y reiniciar.
 
 - **Nunca edites una migración ya aplicada**: Flyway valida checksums y el
   backend se niega a arrancar. Añade un `V<n>__nombre.sql` nuevo.
-- Estado actual: `V1__init.sql`, `V2__rejection.sql`, `V3__varchar_lengths.sql`.
-  V3 convirtió todas las columnas `text` en `varchar` con anchos por columna.
+- Estado actual: solo `V1__init.sql`. Crea las tres tablas y declara todas las
+  columnas de texto ya como `varchar(n)`, con un ancho por columna. No hay ningún
+  `text` sin acotar ni ningún `ALTER TABLE` que convierta tipos después.
 
 Para ver qué se aplicó:
 
@@ -120,7 +121,7 @@ $env:PGPASSWORD = 'compliance'
 ## Pruebas
 
 ```powershell
-npm test         # Vitest: 44 pruebas en 4 archivos
+npm test         # Vitest: 46 pruebas en 4 archivos
 npm run lint     # ESLint (TypeScript + plantillas)
 ```
 

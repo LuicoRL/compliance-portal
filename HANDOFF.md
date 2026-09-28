@@ -109,14 +109,12 @@ error "already exists" — es seguro ignorarlo.
 ### 3.2 Las tablas se crean solas
 
 No hay nada más que ejecutar. En el primer arranque del backend, Flyway detecta
-un esquema vacío y aplica `V1`, `V2` y `V3` automáticamente. Deberías ver esto en
-el log del backend:
+un esquema vacío y aplica `V1` automáticamente. Deberías ver esto en el log del
+backend:
 
 ```
 INFO  Flyway: Migrating schema "public" to version "1 - init"
-INFO  Flyway: Migrating schema "public" to version "2 - rejection"
-INFO  Flyway: Migrating schema "public" to version "3 - varchar lengths"
-INFO  Flyway: Successfully applied 3 migrations to schema "public", now at version v3
+INFO  Flyway: Successfully applied 1 migration to schema "public", now at version v1
 ```
 
 Confírmalo:
@@ -309,9 +307,7 @@ compliance-portal/
 │       └── resources/
 │           ├── application.yml           puerto, CORS, configuración de BD
 │           └── db/migration/             ← SQL de Flyway (ver sección 12)
-│               ├── V1__init.sql
-│               ├── V2__rejection.sql
-│               └── V3__varchar_lengths.sql
+│               └── V1__init.sql
 │
 ├── README.md                             documentación del paquete portable
 ├── DEVELOPMENT.md                        notas de desarrollo del día a día
@@ -501,40 +497,73 @@ Ubicación: `backend/src/main/resources/db/migration/`. Flyway las aplica en
 orden de nombre de archivo al arrancar y registra cada una en
 `flyway_schema_history`.
 
+Hay **una sola migración**. `V1__init.sql` crea las tres tablas y declara todas
+las columnas de texto ya como `varchar(n)`, con un ancho por columna según el
+contenido que realmente guardan. No queda ningún `text` sin acotar ni ningún
+`ALTER TABLE` que convierta tipos después.
+
 > **Nunca edites una migración que ya haya sido aplicada.** Flyway valida los
 > checksums y el backend se negará a arrancar. Siempre añade un archivo nuevo
 > `V<n>__nombre.sql` en su lugar.
+>
+> `V1__init.sql` es la excepción histórica: el proyecto aún no tenía datos ni
+> despliegues cuando se reescribió para declarar los `varchar` desde el inicio
+> (antes eran `text` y los convertía un `V3` con `ALTER TABLE`). Desde el primer
+> despliegue, **`V1` también queda congelada**: cualquier cambio de esquema
+> posterior va en un `V2__nombre.sql` nuevo.
 
 ### `V1__init.sql`
 
 ```sql
+-- Compliance Portal: base schema.
+--
+-- Every string column is a bounded `varchar` from the start, sized to the real
+-- content it carries rather than to one arbitrary number. `status`, `nit`,
+-- `form_key` and the `content_type` columns hold short codes, while company
+-- names, URLs, free-text document references and file names need much more
+-- room.
+--
+-- Two widths deserve a note:
+--   * `documents.file_name` (255) stores the document's display label, e.g.
+--     "Documento de identidad del Representante Legal" (46 chars), so it can
+--     never be as short as 25.
+--   * `documents.form_key` (25) is the tightest constraint in the schema: the
+--     longest key in the app is `representativeDocument` at 23 characters, so
+--     only 2 characters of headroom remain. Raise it before adding a longer
+--     field key.
+--   * `clients.rejection_fields` (500) holds a JSON array of flagged form keys;
+--     with all 18 selected it serialises to 329 chars. It is a string, not a
+--     real JSON column.
+
 CREATE TABLE clients (
     id                            UUID PRIMARY KEY,
-    client_name                   TEXT NOT NULL,
-    nit                           TEXT NOT NULL,
-    constitution_record           TEXT,
-    commercial_registration       TEXT,
-    representative_document       TEXT,
-    representative_power          TEXT,
-    bank_certification            TEXT,
-    website                       TEXT,
-    status                        TEXT NOT NULL DEFAULT 'NOT_APPROVED',
+    client_name                   VARCHAR(180) NOT NULL,
+    nit                           VARCHAR(25) NOT NULL,
+    constitution_record           VARCHAR(120),
+    commercial_registration       VARCHAR(120),
+    representative_document       VARCHAR(120),
+    representative_power          VARCHAR(120),
+    bank_certification            VARCHAR(120),
+    website                       VARCHAR(255),
+    status                        VARCHAR(25) NOT NULL DEFAULT 'NOT_APPROVED',
     base_documentation_reviewed   BOOLEAN NOT NULL DEFAULT FALSE,
     base_documentation_reviewed_at TIMESTAMPTZ,
     follow_up_forms_enabled       BOOLEAN NOT NULL DEFAULT FALSE,
     follow_up_forms_enabled_at    TIMESTAMPTZ,
     follow_up_forms_submitted_at  TIMESTAMPTZ,
-    operating_license             TEXT,
-    ubo_identities                TEXT,
-    org_chart                     TEXT,
-    commercial_evidence           TEXT,
-    financial_statements          TEXT,
-    operating_flow                TEXT,
-    commercial_contracts          TEXT,
-    aml_manual                    TEXT,
-    regulatory_licenses           TEXT,
-    submerchants                  TEXT,
-    pep_declaration               TEXT,
+    operating_license             VARCHAR(500),
+    ubo_identities                VARCHAR(500),
+    org_chart                     VARCHAR(500),
+    commercial_evidence           VARCHAR(500),
+    financial_statements          VARCHAR(500),
+    operating_flow                VARCHAR(500),
+    commercial_contracts          VARCHAR(500),
+    aml_manual                    VARCHAR(500),
+    regulatory_licenses           VARCHAR(500),
+    submerchants                  VARCHAR(500),
+    pep_declaration               VARCHAR(500),
+    rejected_at                   TIMESTAMPTZ,
+    rejection_fields              VARCHAR(500),
     created_at                    TIMESTAMPTZ NOT NULL DEFAULT now(),
     submitted_at                  TIMESTAMPTZ,
     reviewed_at                   TIMESTAMPTZ
@@ -543,9 +572,9 @@ CREATE TABLE clients (
 CREATE TABLE documents (
     id           UUID PRIMARY KEY,
     client_id    UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-    form_key     TEXT NOT NULL,
-    file_name    TEXT NOT NULL,
-    content_type TEXT,
+    form_key     VARCHAR(25) NOT NULL,
+    file_name    VARCHAR(255) NOT NULL,
+    content_type VARCHAR(25),
     size         BIGINT,
     content      BYTEA NOT NULL,
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -555,69 +584,12 @@ CREATE INDEX idx_documents_client ON documents(client_id);
 CREATE TABLE pdfs (
     id           UUID PRIMARY KEY,
     client_id    UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
-    file_name    TEXT NOT NULL,
-    content_type TEXT NOT NULL DEFAULT 'application/pdf',
+    file_name    VARCHAR(255) NOT NULL,
+    content_type VARCHAR(25) NOT NULL DEFAULT 'application/pdf',
     content      BYTEA NOT NULL,
     generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_pdfs_client ON pdfs(client_id);
-```
-
-### `V2__rejection.sql`
-
-```sql
-ALTER TABLE clients ADD COLUMN rejected_at TIMESTAMPTZ;
-ALTER TABLE clients ADD COLUMN rejection_fields TEXT;
-```
-
-### `V3__varchar_lengths.sql`
-
-```sql
--- Bounded varchar widths instead of unbounded TEXT.
---
--- The widths are sized to the real content each column carries, not to a single
--- arbitrary number: `status`, `nit`, `form_key` and the `content_type` columns
--- hold short codes, while company names, URLs, free-text document references
--- and file names need considerably more room. Note that `file_name` stores the
--- document's display label (e.g. "Documento de identidad del Representante
--- Legal", 46 chars), so it can never be as short as 25.
-
-ALTER TABLE clients ALTER COLUMN status                      TYPE VARCHAR(25);
-ALTER TABLE clients ALTER COLUMN nit                          TYPE VARCHAR(25);
-ALTER TABLE clients ALTER COLUMN client_name                  TYPE VARCHAR(180);
-ALTER TABLE clients ALTER COLUMN website                      TYPE VARCHAR(255);
-
--- Free-text reference the client types for each base document.
-ALTER TABLE clients ALTER COLUMN constitution_record         TYPE VARCHAR(120);
-ALTER TABLE clients ALTER COLUMN commercial_registration     TYPE VARCHAR(120);
-ALTER TABLE clients ALTER COLUMN representative_document     TYPE VARCHAR(120);
-ALTER TABLE clients ALTER COLUMN representative_power        TYPE VARCHAR(120);
-ALTER TABLE clients ALTER COLUMN bank_certification          TYPE VARCHAR(120);
-
--- Free-text description submitted in the intermediate / enhanced follow-up forms.
-ALTER TABLE clients ALTER COLUMN operating_license           TYPE VARCHAR(500);
-ALTER TABLE clients ALTER COLUMN ubo_identities              TYPE VARCHAR(500);
-ALTER TABLE clients ALTER COLUMN org_chart                   TYPE VARCHAR(500);
-ALTER TABLE clients ALTER COLUMN commercial_evidence         TYPE VARCHAR(500);
-ALTER TABLE clients ALTER COLUMN financial_statements        TYPE VARCHAR(500);
-ALTER TABLE clients ALTER COLUMN operating_flow              TYPE VARCHAR(500);
-ALTER TABLE clients ALTER COLUMN commercial_contracts        TYPE VARCHAR(500);
-ALTER TABLE clients ALTER COLUMN aml_manual                  TYPE VARCHAR(500);
-ALTER TABLE clients ALTER COLUMN regulatory_licenses         TYPE VARCHAR(500);
-ALTER TABLE clients ALTER COLUMN submerchants                TYPE VARCHAR(500);
-ALTER TABLE clients ALTER COLUMN pep_declaration             TYPE VARCHAR(500);
-
--- JSON array of flagged form keys; all 18 candidates serialise to 329 chars.
-ALTER TABLE clients ALTER COLUMN rejection_fields            TYPE VARCHAR(500);
-
--- `form_key` fits every key in the app today, the longest being
--- `representativeDocument` at 23 characters.
-ALTER TABLE documents ALTER COLUMN form_key                 TYPE VARCHAR(25);
-ALTER TABLE documents ALTER COLUMN file_name                TYPE VARCHAR(255);
-ALTER TABLE documents ALTER COLUMN content_type             TYPE VARCHAR(25);
-
-ALTER TABLE pdfs ALTER COLUMN file_name                      TYPE VARCHAR(255);
-ALTER TABLE pdfs ALTER COLUMN content_type                   TYPE VARCHAR(25);
 ```
 
 ### Referencia del esquema final
@@ -658,7 +630,7 @@ exigencia legal — añádelo.
 
 ### 13.3 Los anchos de `varchar` son provisionales
 
-Los anchos de `V3` son coherentes entre sí y seguros frente a los datos que ha
+Los anchos declarados en `V1__init.sql` son coherentes entre sí y seguros frente a los datos que ha
 visto esta demo, pero esos datos son **de usar y tirar** — los NIT son
 literalmente `2`, `23`, `321`. Así que varios límites nunca se han puesto a
 prueba:
@@ -719,15 +691,11 @@ significa:
 - **Sin base de datos** — quien lo recibe debe crear el rol y la base de datos
   (sección 3).
 
-Antes de hacer `push`, asegúrate de que todo esté commiteado, en particular los
-componentes de las vistas, que son nuevos:
+Comprueba que el árbol de trabajo esté limpio y que todo esté commiteado:
 
 ```powershell
-git add src/app/admin-view src/app/client-view src/app/shared src/app/testing src/styles
-git add backend/src/main/resources/db/migration/V3__varchar_lengths.sql
-git add DEVELOPMENT.md HANDOFF.md
-git add start.ps1 stop.ps1 package-portable.ps1   # solo si quieres las herramientas del paquete
-git status        # revisa antes de commitear
+git status        # debe salir limpio antes de hacer push
+git log --oneline -3
 ```
 
 El antiguo `src/app/master-view/` está eliminado en esta rama — ese componente
